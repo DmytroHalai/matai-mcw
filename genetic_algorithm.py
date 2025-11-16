@@ -1,60 +1,95 @@
 import numpy as np
-from utils import decode, nguyen_widrow_init
 from network import NeuralNetwork
+from utils import decode, nguyen_widrow_init
 
-class GeneticAlgorithm:
-    def __init__(self, nn_shape, X, Y, Z_real, pop_size=30, mutation_rate=0.1):
-        self.nn_shape = nn_shape
+
+class StructuralGeneticAlgorithm:
+    def __init__(self, X, Y, Z_real, pop_size=20, mutation_rate=0.1,
+                 max_neurons=20, max_error=0.01, max_layers=5):
         self.X, self.Y, self.Z_real = X, Y, Z_real
         self.pop_size = pop_size
         self.mutation_rate = mutation_rate
+        self.max_neurons = max_neurons
+        self.max_error = max_error
+        self.max_layers = max_layers
 
-        self.param_count = sum(
-            nn_shape[i] * nn_shape[i + 1] + nn_shape[i + 1]
-            for i in range(len(nn_shape) - 1)
-        )
+        self.population = [self.random_chromosome() for _ in range(pop_size)]
 
-        self.population = [
-            nguyen_widrow_init(nn_shape) if i < 5 else np.random.uniform(-1, 1, self.param_count)
-            for i in range(pop_size)
-        ]
+    def random_structure(self):
+        layers = np.random.randint(1, self.max_layers + 1)
+        return [2] + [np.random.randint(2, self.max_neurons) for _ in range(layers)] + [1]
 
-    def fitness(self, genome):
-        nn = NeuralNetwork(self.nn_shape)
+    def random_chromosome(self):
+        structure = self.random_structure()
+        weights = nguyen_widrow_init(structure)
+        return (structure, weights)
+
+    def fitness(self, chromosome):
+        structure, genome = chromosome
+        nn = NeuralNetwork(structure)
         decode(nn, genome)
+
         inputs = np.vstack((self.X.ravel(), self.Y.ravel()))
         Z_pred = nn.forward(inputs).reshape(self.X.shape)
         return np.mean((self.Z_real - Z_pred) ** 2)
 
     def select_parents(self, scores):
         probs = (1 / (1 + np.array(scores)))
-        probs /= probs.sum()
-        idx = np.random.choice(range(self.pop_size), size=2, p=probs)
+        probs = probs / probs.sum()
+        idx = np.random.choice(len(scores), size=2, p=probs)
         return self.population[idx[0]], self.population[idx[1]]
 
     def crossover(self, p1, p2):
-        point = np.random.randint(0, len(p1))
-        return np.concatenate((p1[:point], p2[point:]))
+        s1, g1 = p1
+        s2, g2 = p2
 
-    def mutate(self, genome):
+        point = min(len(s1), len(s2)) // 2
+        child_structure = s1[:point] + s2[point:]
+
+        child_weights = nguyen_widrow_init(child_structure)
+        return (child_structure, child_weights)
+
+    def mutate(self, chromosome):
+        structure, genome = chromosome
+
+        if np.random.rand() < self.mutation_rate:
+            idx = np.random.randint(1, len(structure) - 1)
+            structure[idx] = np.random.randint(2, self.max_neurons)
+
+            genome = nguyen_widrow_init(structure)
+
         for i in range(len(genome)):
             if np.random.rand() < self.mutation_rate:
-                genome[i] += np.random.normal(0, 0.3)
-        return genome
+                genome[i] += np.random.normal(0, 0.2)
 
-    def evolve(self, generations=30):
-        best_errors = []
+        return (structure, genome)
+
+    def evolve(self, generations, info_callback=None):
+        best_history = []
+
         for gen in range(generations):
-            scores = [self.fitness(g) for g in self.population]
+            scores = [self.fitness(c) for c in self.population]
             best_idx = np.argmin(scores)
-            best_errors.append(scores[best_idx])
-            print(f"Покоління {gen}: найкраща похибка = {scores[best_idx]:.5f}")
-            new_pop = [self.population[best_idx].copy()]  # елітизм
+            best = self.population[best_idx]
+
+            best_history.append((gen, best[0], scores[best_idx]))
+
+            if info_callback:
+                info_callback(gen, best[0], scores[best_idx])
+
+            if scores[best_idx] <= self.max_error:
+                return best, best_history
+
+            new_pop = [best]
+
             while len(new_pop) < self.pop_size:
                 p1, p2 = self.select_parents(scores)
                 child = self.crossover(p1, p2)
                 child = self.mutate(child)
                 new_pop.append(child)
+
             self.population = new_pop
-        print(f"Завершено\n")
-        return self.population[best_idx], best_errors
+
+        scores = [self.fitness(c) for c in self.population]
+        best_idx = np.argmin(scores)
+        return self.population[best_idx], best_history

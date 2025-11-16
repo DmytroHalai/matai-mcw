@@ -1,7 +1,7 @@
 import numpy as np
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+def activation(x):
+    return np.tanh(x)
 
 def nguyen_widrow_init(nn_shape):
     weights, biases = [], []

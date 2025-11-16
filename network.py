@@ -1,5 +1,5 @@
 import numpy as np
-from utils import sigmoid
+from utils import activation
 
 class NeuralNetwork:
     def __init__(self, layer_sizes):
@@ -15,5 +15,5 @@ class NeuralNetwork:
     def forward(self, inputs):
         a = inputs
         for w, b in zip(self.weights[:-1], self.biases[:-1]):
-            a = sigmoid(np.dot(w, a) + b)
+            a = activation(np.dot(w, a) + b)
         return np.dot(self.weights[-1], a) + self.biases[-1]
